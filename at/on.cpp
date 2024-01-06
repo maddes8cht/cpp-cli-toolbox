@@ -2,7 +2,7 @@
  * @file
  * @brief Simple program to execute a command at a specified time.
  *
- * Usage: program_name Time Command
+ * @note Usage: on Time Command
  * - Time should be in the format hh:mm or hh:mm:ss.
  * - Example: program_name 12:30 ls
  */

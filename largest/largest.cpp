@@ -1,3 +1,23 @@
+/**
+ * @file largest.cpp
+ * @brief list the largest files in a specified directory and its subdirectories.
+ *
+ * The "largest" tool lists the largest files in a specified
+ * directory and its subdirectories. It provides options for customizing the
+ * file size analysis, including the number of files to list, the depth of
+ * subdirectories to consider, and the ability to display only file paths
+ * without sizes.
+ *
+ * @note Usage:
+ *     largest -n num -d num -b filemask
+ *
+ * @note Options:
+ *   -n num    : Number of largest files to list (default: 50, use -1 to list all files)
+ *   -d num    : Depth of subdirectories to consider (default: -1, infinite depth)
+ *   -b        : Display only file paths without file sizes
+ *   filemask  : File mask to filter files (default: *)
+ */
+
 #include <iostream>
 #include <filesystem>
 #include <vector>
