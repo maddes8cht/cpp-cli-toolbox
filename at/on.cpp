@@ -4,7 +4,7 @@
  *
  * Usage: on [options] Time [Command [CommandArgs...]]
  * - Time should be in the format hh, hh:mm, or hh:mm:ss (for clock time).
- * - For delay mode: format hh:mm:ss, hh:mm, or ss (seconds only).
+ * - For delay mode: format hh:mm:ss, mm:ss, or ss. The leading unit can exceed standard limits and will be normalized (e.g., 90 becomes 1:30; 120:00 becomes 2:00:00; 26:00:00 becomes 26:00:00). Subsequent units must be 0-59.
  * - Default output: countdown timer, updating in the same line.
  * - If no Command is provided, the program only displays the countdown or progress bar.
  * Options:
@@ -12,7 +12,7 @@
  *   -d, --delay           Interpret Time as duration instead of clock time
  *   -c, --no-clear        Disable in-place countdown (print new line each update)
  *   -o, --output=MODE     Set output mode: time, progress, both, none (or t, p, b, n)
- *   -l, --length=NUM      Set progress bar length (default: 50, min: 5, max: 100)
+ *   -l, --length=NUM      Set progress bar length (default: 50, min: 5, max: 300)
  * Examples:
  *   on 12:30 dir /b              (executes at 12:30 with countdown)
  *   on -d 00:00:20 dir /b        (executes after 20 seconds with countdown)
@@ -20,6 +20,9 @@
  *   on -o b -l 15 -d 1:20 dir    (executes after 1:20 with 15-char progress bar + countdown)
  *   on -o n -d 15 dir            (executes after 15 seconds with no output)
  *   on -o p -l 100 -d 10         (shows 100-char progress bar for 10 seconds, no command)
+ *   on -d 90                     (waits 1:30 with countdown)
+ *   on -d 120:00                 (waits 2:00:00 with countdown)
+ *   on -d 26:00:00               (waits 26:00:00 with countdown)
  */
 
 #include <iostream>
@@ -91,7 +94,7 @@ int main(int argc, char *argv[]) {
     if (showHelp) {
         std::cout << "Usage: " << argv[0] << " [options] Time [Command [CommandArgs...]]" << std::endl;
         std::cout << "Time format: hh, hh:mm, or hh:mm:ss (for clock time)" << std::endl;
-        std::cout << "For delay mode: hh:mm:ss, hh:mm, or ss (seconds only)" << std::endl;
+        std::cout << "For delay mode: hh:mm:ss, mm:ss, or ss. The leading unit can exceed standard limits and will be normalized (e.g., 90 becomes 1:30; 120:00 becomes 2:00:00; 26:00:00 becomes 26:00:00). Subsequent units must be 0-59." << std::endl;
         std::cout << "Default output: countdown timer, updating in the same line." << std::endl;
         std::cout << "If no Command is provided, the program only displays the countdown or progress bar." << std::endl;
         std::cout << "Options:" << std::endl;
@@ -99,7 +102,7 @@ int main(int argc, char *argv[]) {
         std::cout << "  -d, --delay           Interpret Time as duration instead of clock time" << std::endl;
         std::cout << "  -c, --no-clear        Disable in-place countdown (print new line each update)" << std::endl;
         std::cout << "  -o, --output=MODE     Set output mode: time, progress, both, none (or t, p, b, n)" << std::endl;
-        std::cout << "  -l, --length=NUM      Set progress bar length (default: 50, min: 5, max: 100)" << std::endl;
+        std::cout << "  -l, --length=NUM      Set progress bar length (default: 50, min: 5, max: 300)" << std::endl;
         return 0;
     }
 
@@ -130,6 +133,7 @@ int main(int argc, char *argv[]) {
         std::cerr << "Invalid time/duration format." << std::endl;
         return 1;
     }
+    int original_fields = fields; // Store original number of fields for validation
     if (fields == 1) {
         // Only one value: for delay mode, treat as seconds; for time mode, as hours
         if (delayMode) {
@@ -143,24 +147,44 @@ int main(int argc, char *argv[]) {
     } else if (fields == 2) {
         // Two values: hh:mm for time, or mm:ss for delay
         if (delayMode) {
-            ss = mm;  // mm wird Sekunden
-            mm = hh;  // hh wird Minuten
-            hh = 0;   // Stunden auf 0
+            ss = mm;  // mm becomes seconds
+            mm = hh;  // hh becomes minutes
+            hh = 0;   // hours set to 0
         } else {
-            ss = 0;   // Sekunden auf 0 für time mode
+            ss = 0;   // seconds set to 0 for time mode
         }
     }
 
-    // Validate values
-    if (hh < 0 || hh > 23 || mm < 0 || mm > 59 || ss < 0 || ss > 59) {
-        std::cerr << "Invalid values. Hours: 0-23, Minutes/Seconds: 0-59." << std::endl;
+    // Validate values: negative not allowed; in non-delay, strict bounds; in delay, bounds depend on original fields
+    if (hh < 0 || mm < 0 || ss < 0) {
+        std::cerr << "Invalid values. All components must be non-negative." << std::endl;
         return 1;
+    }
+    if (!delayMode) {
+        if (hh > 23 || mm > 59 || ss > 59) {
+            std::cerr << "Invalid values. Hours: 0-23, Minutes/Seconds: 0-59." << std::endl;
+            return 1;
+        }
+    } else {
+        // In delay mode, allow overflow only in the leading unit
+        if (original_fields == 2) {
+            if (ss > 59) {
+                std::cerr << "Invalid values. Seconds must be 0-59." << std::endl;
+                return 1;
+            }
+        } else if (original_fields == 3) {
+            if (mm > 59 || ss > 59) {
+                std::cerr << "Invalid values. Minutes/Seconds must be 0-59." << std::endl;
+                return 1;
+            }
+        }
+        // For original_fields == 1, no upper bounds checks (seconds can overflow)
     }
 
     // Calculate seconds
-    int targetSeconds = hh * 3600 + mm * 60 + ss;
+    long long targetSeconds = static_cast<long long>(hh) * 3600 + mm * 60 + ss; // Use long long to handle large values
 
-    int timeDifference;
+    long long timeDifference;
     if (delayMode) {
         // In delay mode, wait exactly the duration
         timeDifference = targetSeconds;
