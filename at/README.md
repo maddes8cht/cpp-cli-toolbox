@@ -1,17 +1,53 @@
-# At is On
-When trying to use the old `at` on Windows cmd command shell, I realized that it was deprecated.
-It was recommended to use the windows scheduler instead.
-For some really simple tasks, this is way too much overhead, and i still want to use something as simle as the old at command
+# At is `On`
+
+When trying to use the old `at` command in the Windows CMD shell, I realized that it was deprecated. It was recommended to use the Windows Task Scheduler instead. For some really simple tasks, this is way too much overhead, and I still wanted something as simple as the old `at` command.
+
 ### Solution
-So I wrote this simple Program to do exactly that.
-As the old `at`is still there and sometimes not so easy to overwrite, since it is part of the windows system, I chose another Name for this. And as `at` is quite short and easy to remember, I chose `on` for this.
-`On` for this command sounds quite like "wrong" english, but it does it's job, and so does it's name.
-### Usage	
-Usage: on Time Command
 
-time format: `hh:mm` or `hh:mm:ss`
+The old `at` command in Windows is deprecated and no longer works, only displaying a message directing users to use `schtasks.exe` instead. Since replacing `at` with a new tool of the same name is impractical due to its presence in the Windows system, I chose a different name: `on`. While `on` might sound like slightly "wrong" English, it’s short, memorable, and gets the job done.
 
-Command can be any command you want to execute. In some cases, it may help to include it in double quotes (`"`).
+### What it looks like
+`On` may display a progressbar and / or a text display showing the remaining time like this:
+```
+>> on -o b -d 10
+[################################\.................] Remaining: 00:00:03
+```
+
+### Usage
+
+```
+on [options] Time [Command [CommandArgs...]]
+```
+
+- **Time format**:
+  - For clock time (default): `hh`, `hh:mm`, or `hh:mm:ss` (e.g., `12`, `12:30`, `12:30:45`).
+  - For delay mode (`-d`): `hh:mm:ss`, `mm:ss`, or `ss` (e.g., `01:00:00`, `1:20`, `15`).
+- **Command**: Optional command to execute, followed by its arguments. Commands with spaces or special characters may require double quotes (`"`) depending on the shell. If no command is provided, the program only displays the countdown or progress bar (or nothing if `-o n` is used).
+- **Options**:
+  - `-h`, `--help`: Show the full help message.
+  - `-d`, `--delay`: Interpret `Time` as a duration instead of a clock time.
+  - `-c`, `--no-clear`: Disable in-place countdown, printing a new line for each update.
+  - `-o`, `--output=MODE`: Set output mode: `time` (countdown timer), `progress` (progress bar), `both` (timer + bar), `none` (no output). Short forms: `t`, `p`, `b`, `n`.
+  - `-l`, `--length=NUM`: Set progress bar length (default: 50, range: 5–100).
+- The program can be interrupted at any time with `Ctrl+C`.
+
 ### Examples
-* on 12:30 "echo Hello World"
-* on 14:20 "ls -atl"
+
+- `on 12:30 "echo Hello World"`: Executes `echo Hello World` at 12:30 with a countdown timer.
+- `on 14:20 ls -atl`: Executes `ls -atl` at 14:20 with a countdown timer.
+- `on -d 15 dir`: Executes `dir` after 15 seconds with a countdown timer.
+- `on -d 1:20 dir`: Executes `dir` after 1 minute and 20 seconds with a countdown timer.
+- `on -o p -d 15 dir`: Executes `dir` after 15 seconds, showing a 50-character progress bar.
+- `on -o p -l 100 -d 10`: Shows a 100-character progress bar for 10 seconds, no command executed.
+- `on -o b -l 15 -d 1:20 dir`: Executes `dir` after 1 minute and 20 seconds, showing a 15-character progress bar and countdown timer.
+- `on -o n -d 10`: Blocks the terminal for 10 seconds with no output, no command executed.
+- `on --help`: Shows the full help message.
+
+### Features
+
+- **Simple and Lightweight**: Replaces the deprecated `at` command with minimal overhead.
+- **Flexible Time Formats**: Supports both clock times and durations for scheduling.
+- **Visual Feedback**: Optional progress bar (updated every 125 ms) and countdown timer for a clear user experience.
+- **Customizable**: Adjust the progress bar length and output mode to suit your needs.
+- **Windows-Compatible**: Works in Windows environments. Should compile and work on ony OS, as it only uses c++ with standard libraries.
+- **Interruptible**: Can be stopped at any time with `Ctrl+C`.
