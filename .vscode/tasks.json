@@ -3,11 +3,35 @@
 	"tasks": [
 		{
 			"type": "cppbuild",
-			"label": "C/C++: g++.exe build active file",
+			"label": "C/C++: g++.exe debug build active file",
 			"command": "G:\\msys64\\ucrt64\\bin\\g++.exe",
 			"args": [
 				"-fdiagnostics-color=always",
 				"-g",
+				"-std=c++17",
+				"-O0",
+				"${file}",
+				"-o",
+				"${fileDirname}\\${fileBasenameNoExtension}_debug.exe"
+			],
+			"options": {
+				"cwd": "G:\\msys64\\ucrt64\\bin"
+			},
+			"problemMatcher": [
+				"$gcc"
+			],
+			"group": "build",
+			"detail": "Debug build with -O0, compiler: G:\\msys64\\ucrt64\\bin\\g++.exe"
+		},
+		{
+			"type": "cppbuild",
+			"label": "C/C++: g++.exe release build active file",
+			"command": "G:\\msys64\\ucrt64\\bin\\g++.exe",
+			"args": [
+				"-fdiagnostics-color=always",
+				"-g",
+				"-std=c++17",
+				"-O2",
 				"${file}",
 				"-o",
 				"${fileDirname}\\${fileBasenameNoExtension}.exe"
@@ -22,7 +46,7 @@
 				"kind": "build",
 				"isDefault": true
 			},
-			"detail": "compiler: G:\\msys64\\ucrt64\\bin\\g++.exe"
+			"detail": "Release build with -O2, compiler: G:\\msys64\\ucrt64\\bin\\g++.exe"
 		}
 	]
 }
