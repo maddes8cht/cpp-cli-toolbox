@@ -8,25 +8,25 @@
  * progress feedback, and output format.
  *
  * @note Usage:
- *     largest [-n num] [-d num] [-b] [-r] [-p] [filemask]
+ *     largest [options] [directory] [filemask]
  *
  * @note Options:
- *   -n num    : Number of largest files to list (default: 50, -1 for all)
- *   -d num    : Depth of subdirectories to consider (default: -1, infinite)
- *   -b        : Display only file paths without file sizes
- *   -r        : Display relative paths
- *   -p        : Show progress (file count, current depth, max depth)
- *   filemask  : File mask to filter files (e.g., *.txt, default: *)
- *   -h        : Display this help text
+ *   -n, --number NUM      Number of largest files to list (default: 50, -1 for all)
+ *   -d, --depth NUM       Depth of subdirectories to consider (default: -1, infinite)
+ *   -b, --bare            Display only file paths without file sizes
+ *   -r, --relative        Display relative paths
+ *   -p, --progress        Show progress (file count, current depth, max depth)
+ *   -v, --verbose         Verbose mode (show inaccessible files/directories)
+ *   -h, --help            Display this help text
+ *   directory             Directory to scan (default: current directory)
+ *   filemask              File mask to filter files (e.g., *.txt, default: *)
  */
 
 #include <Windows.h>
 #include <algorithm>
-#include <codecvt> // for std::codecvt_utf8
 #include <filesystem>
-#include <iomanip> // for std::setw, std::setfill
+#include <iomanip>
 #include <iostream>
-#include <locale> // for std::locale, std::wcout
 #include <queue>
 #include <regex>
 #include <sstream>
@@ -36,26 +36,83 @@
 namespace fs = std::filesystem;
 
 /**
- * @brief Comparator function for min-heap (smallest size at top).
+ * @brief Comparator function for max-heap (largest size at top).
  */
 struct FileEntry {
     fs::directory_entry entry;
     uintmax_t size;
-    bool operator<(const FileEntry& other) const { return size > other.size; } // Min-heap
+    bool operator<(const FileEntry& other) const { return size < other.size; } // Max-heap
 };
+
+/**
+ * @brief Initialize console for UTF-8 output on Windows
+ */
+void initConsoleUTF8() {
+    // Set console code page to UTF-8
+    SetConsoleOutputCP(CP_UTF8);
+    SetConsoleCP(CP_UTF8);
+    
+    // Enable virtual terminal processing for better ANSI support
+    HANDLE hOut = GetStdHandle(STD_OUTPUT_HANDLE);
+    if (hOut != INVALID_HANDLE_VALUE) {
+        DWORD dwMode = 0;
+        if (GetConsoleMode(hOut, &dwMode)) {
+            dwMode |= ENABLE_VIRTUAL_TERMINAL_PROCESSING;
+            SetConsoleMode(hOut, dwMode);
+        }
+    }
+    
+    HANDLE hIn = GetStdHandle(STD_INPUT_HANDLE);
+    if (hIn != INVALID_HANDLE_VALUE) {
+        DWORD dwMode = 0;
+        if (GetConsoleMode(hIn, &dwMode)) {
+            dwMode |= ENABLE_VIRTUAL_TERMINAL_INPUT;
+            SetConsoleMode(hIn, dwMode);
+        }
+    }
+}
+
+/**
+ * @brief Format number with thousands separators.
+ */
+std::string formatNumber(size_t number) {
+    std::string numStr = std::to_string(number);
+    if (numStr.length() <= 3) {
+        return numStr;
+    }
+    
+    std::string result;
+    int count = 0;
+    for (int i = static_cast<int>(numStr.length()) - 1; i >= 0; --i) {
+        if (count > 0 && count % 3 == 0) {
+            result = '.' + result; // thousands separator
+        }
+        result = numStr[i] + result;
+        count++;
+    }
+    return result;
+}
 
 /**
  * @brief Check if filename matches the filemask using wildcard patterns.
  */
 bool matchesFileMask(const std::string& filename, const std::string& mask) {
     if (mask == "*") return true;
-    // Convert wildcard to regex (e.g., "*.txt" -> ".*\.txt$")
-    std::string regexPattern = std::regex_replace(mask, std::regex("\\*"), ".*");
-    regexPattern = std::regex_replace(regexPattern, std::regex("\\?"), ".");
+    
+    // Convert Windows-style wildcards to regex
+    std::string pattern = mask;
+    // Escape special regex characters except * and ?
+    pattern = std::regex_replace(pattern, std::regex(R"([.^$|()\[\]{}\\])"), R"(\$&)");
+    // Convert wildcards to regex
+    pattern = std::regex_replace(pattern, std::regex(R"(\*)"), ".*");
+    pattern = std::regex_replace(pattern, std::regex(R"(\?)"), ".");
+    pattern = "^" + pattern + "$";
+    
     try {
-        return std::regex_match(filename, std::regex(regexPattern));
+        return std::regex_match(filename, std::regex(pattern, std::regex_constants::icase));
     } catch (const std::regex_error&) {
-        return filename.find(mask) != std::string::npos; // Fallback to substring matching
+        // Fallback to simple matching
+        return filename.find(mask) != std::string::npos;
     }
 }
 
@@ -70,13 +127,21 @@ std::string formatFileSize(uintmax_t size) {
     } else {
         const char* suffixes[] = {" BY", " KB", " MB", " GB", " TB", " PB", " EB", " ZB", " YB"};
         int suffixIndex = 0;
-        while (size >= 1000 && suffixIndex < sizeof(suffixes) / sizeof(suffixes[0])) {
-            size /= 1000;
+        double scaledSize = static_cast<double>(size);
+        while (scaledSize >= 1000.0 && suffixIndex < sizeof(suffixes) / sizeof(suffixes[0]) - 1) {
+            scaledSize /= 1000.0;
             suffixIndex++;
         }
-        oss << std::setw(3) << std::right << size << suffixes[suffixIndex];
+        oss << std::setw(3) << std::right << static_cast<uintmax_t>(scaledSize) << suffixes[suffixIndex];
     }
     return oss.str();
+}
+
+/**
+ * @brief Clear the current line properly.
+ */
+void clearLine() {
+    std::cout << "\r" << std::string(120, ' ') << "\r" << std::flush;
 }
 
 /**
@@ -84,9 +149,10 @@ std::string formatFileSize(uintmax_t size) {
  */
 void listLargestFiles(const fs::path& path, const std::string& fileMask = "*",
                      int depth = -1, int numFiles = 50, bool bare = false,
-                     bool relative = false, bool showProgress = false) {
-    std::priority_queue<FileEntry> heap; // Min-heap for top N files
+                     bool relative = false, bool showProgress = false, bool verbose = false) {
+    std::priority_queue<FileEntry> heap; // Max-heap for top N files
     size_t fileCount = 0;
+    size_t inaccessibleCount = 0;
     int maxDepth = 0;
 
     if (showProgress) {
@@ -95,54 +161,117 @@ void listLargestFiles(const fs::path& path, const std::string& fileMask = "*",
 
     try {
         auto lastUpdate = std::chrono::steady_clock::now();
-        for (auto it = fs::recursive_directory_iterator(path, fs::directory_options::skip_permission_denied);
-             it != fs::recursive_directory_iterator(); ++it) {
-            if (depth != -1 && it.depth() > depth) {
-                it.disable_recursion_pending(); // Skip deeper subdirectories
+        
+        // Use a manual approach to handle errors gracefully
+        std::vector<fs::path> directoriesToProcess;
+        directoriesToProcess.push_back(path);
+        
+        while (!directoriesToProcess.empty()) {
+            fs::path currentDir = directoriesToProcess.back();
+            directoriesToProcess.pop_back();
+            
+            // Calculate current depth
+            int currentDepth = 0;
+            if (currentDir != path) {
+                try {
+                    auto relPath = fs::relative(currentDir, path);
+                    currentDepth = static_cast<int>(std::distance(relPath.begin(), relPath.end()));
+                } catch (...) {
+                    currentDepth = 0; // Fallback
+                }
+            }
+            
+            if (depth != -1 && currentDepth > depth) {
                 continue;
             }
-            if (fs::is_regular_file(*it) && matchesFileMask(it->path().filename().string(), fileMask)) {
-                fileCount++;
-                maxDepth = std::max(maxDepth, it.depth());
-                uintmax_t size = fs::file_size(*it);
-                if (numFiles == -1 || heap.size() < static_cast<size_t>(numFiles)) {
-                    heap.push({*it, size});
-                } else if (size > heap.top().size) {
-                    heap.pop();
-                    heap.push({*it, size});
-                }
+            
+            maxDepth = std::max(maxDepth, currentDepth);
+            
+            try {
+                // Try to iterate through the directory
+                for (const auto& entry : fs::directory_iterator(currentDir, fs::directory_options::skip_permission_denied)) {
+                    try {
+                        if (fs::is_directory(entry)) {
+                            // Add subdirectory to processing queue
+                            directoriesToProcess.push_back(entry.path());
+                        } else if (fs::is_regular_file(entry) && matchesFileMask(entry.path().filename().string(), fileMask)) {
+                            fileCount++;
+                            uintmax_t size = fs::file_size(entry);
+                            
+                            if (numFiles == -1) {
+                                heap.push({entry, size});
+                            } else if (heap.size() < static_cast<size_t>(numFiles)) {
+                                heap.push({entry, size});
+                            } else if (size > heap.top().size) {
+                                heap.pop();
+                                heap.push({entry, size});
+                            }
 
+                            if (showProgress) {
+                                auto now = std::chrono::steady_clock::now();
+                                if (std::chrono::duration_cast<std::chrono::milliseconds>(now - lastUpdate).count() >= 100) {
+                                    clearLine();
+                                    std::ostringstream oss;
+                                    oss << "Files: " << formatNumber(fileCount)
+                                        << " | Depth: " << std::setw(2) << std::setfill(' ') << currentDepth
+                                        << " | Max Depth: " << std::setw(2) << std::setfill(' ') << maxDepth;
+                                    
+                                    if (inaccessibleCount > 0) {
+                                        oss << " | Inaccessible: " << inaccessibleCount;
+                                    }
+                                    
+                                    std::cout << "\r" << oss.str() << std::flush;
+                                    lastUpdate = now;
+                                }
+                            }
+                        }
+                    } catch (const fs::filesystem_error& e) {
+                        inaccessibleCount++;
+                        if (verbose) {
+                            clearLine();
+                            std::cerr << "Inaccessible file/directory skipped: " << entry.path().string() << std::endl;
+                        }
+                    }
+                }
+            } catch (const fs::filesystem_error& e) {
+                inaccessibleCount++;
+                if (verbose) {
+                    clearLine();
+                    std::cerr << "Inaccessible directory skipped: " << currentDir.string() << std::endl;
+                }
+                
                 if (showProgress) {
                     auto now = std::chrono::steady_clock::now();
-                    if (std::chrono::duration_cast<std::chrono::milliseconds>(now - lastUpdate).count() >= 100) {
-                        std::ostringstream oss;
-                        oss << "\rFiles: " << fileCount
-                            << " | Depth: " << std::setw(2) << std::setfill('0') << it.depth()
-                            << " | Max Depth: " << std::setw(2) << std::setfill('0') << maxDepth
-                            << std::string(10, ' '); // Extra padding to ensure full line clear
-                        std::cout << oss.str() << std::flush;
-                        lastUpdate = now;
-                    }
+                    clearLine();
+                    std::ostringstream oss;
+                    oss << "Files: " << formatNumber(fileCount)
+                        << " | Depth: " << std::setw(2) << std::setfill(' ') << currentDepth
+                        << " | Max Depth: " << std::setw(2) << std::setfill(' ') << maxDepth
+                        << " | Inaccessible: " << inaccessibleCount;
+                    
+                    std::cout << "\r" << oss.str() << std::flush;
                 }
             }
         }
     } catch (const fs::filesystem_error& e) {
-        std::cerr << "Error accessing file: " << e.what() << std::endl;
+        if (verbose) {
+            std::cerr << "Error accessing root directory: " << e.what() << std::endl;
+        }
     }
 
     if (showProgress) {
-        std::cout << "\r" << std::string(50, ' ') << "\r\033[?25h"; // Clear line, show cursor
+        // Clear the progress line
+        clearLine();
+        std::cout << "\033[?25h"; // Show cursor
     }
 
-    std::cout << "Sorting and displaying files..." << std::endl;
-
-    // Convert heap to vector for sorted output (largest first)
+    // Convert heap to vector for sorted output (largest first - already sorted due to max-heap)
     std::vector<FileEntry> files;
     while (!heap.empty()) {
         files.push_back(heap.top());
         heap.pop();
     }
-    std::reverse(files.begin(), files.end()); // Largest to smallest
+    // No need to reverse since we're using a max-heap
 
     // Display the largest files
     int count = 0;
@@ -157,59 +286,113 @@ void listLargestFiles(const fs::path& path, const std::string& fileMask = "*",
             count++;
         }
     }
+    
+    if (verbose && inaccessibleCount > 0) {
+        std::cerr << "Skipped " << inaccessibleCount << " inaccessible file(s)/directorie(s)." << std::endl;
+    }
 }
 
 int main(int argc, char* argv[]) {
+    // Initialize console for UTF-8 output
+    initConsoleUTF8();
+    
     int numFiles = 50;
     int depth = -1; // Infinite depth by default
     std::string fileMask = "*";
     bool bare = false;
     bool relative = false;
     bool showProgress = false;
-    std::locale utf8_locale(std::locale(), new std::codecvt_utf8<wchar_t>);
-    std::wcout.imbue(utf8_locale);
+    bool verbose = false;
+    bool showHelp = false;
+    fs::path targetPath = fs::current_path();
+    int argIndex = 1;
 
     // Parse command line arguments
-    for (int i = 1; i < argc; ++i) {
-        std::string arg = argv[i];
-        try {
-            if (arg == "-n") {
-                if (++i < argc) numFiles = std::stoi(argv[i]);
-                if (numFiles < -1) numFiles = 50; // Reset to default
-            } else if (arg == "-d") {
-                if (++i < argc) depth = std::stoi(argv[i]);
-                if (depth < -1) depth = -1; // Reset to default
-            } else if (arg == "-b") {
-                bare = true;
-            } else if (arg == "-r") {
-                relative = true;
-            } else if (arg == "-p") {
-                showProgress = true;
-            } else if (arg == "-h") {
-                std::cout << "Usage: largest [-n num] [-d num] [-b] [-r] [-p] [filemask]\n"
-                          << "Options:\n"
-                          << "  -n num    : Number of largest files to list (default: 50, -1 for all)\n"
-                          << "  -d num    : Depth of subdirectories to consider (default: -1, infinite)\n"
-                          << "  -b        : Display only file paths without file sizes\n"
-                          << "  -r        : Display relative paths\n"
-                          << "  -p        : Show progress (file count, current depth, max depth)\n"
-                          << "  filemask  : File mask to filter files (e.g., *.txt, default: *)\n"
-                          << "  -h        : Display this help text\n";
-                return 0;
+    while (argIndex < argc) {
+        std::string arg = argv[argIndex];
+        
+        if (arg == "-n" || arg == "--number") {
+            if (++argIndex < argc) {
+                try {
+                    numFiles = std::stoi(argv[argIndex]);
+                    if (numFiles < -1) numFiles = 50; // Reset to default
+                } catch (const std::exception& e) {
+                    if (verbose) {
+                        std::cerr << "Invalid number argument: " << argv[argIndex] << std::endl;
+                    }
+                }
+            }
+        } else if (arg == "-d" || arg == "--depth") {
+            if (++argIndex < argc) {
+                try {
+                    depth = std::stoi(argv[argIndex]);
+                    if (depth < -1) depth = -1; // Reset to default
+                } catch (const std::exception& e) {
+                    if (verbose) {
+                        std::cerr << "Invalid depth argument: " << argv[argIndex] << std::endl;
+                    }
+                }
+            }
+        } else if (arg == "-b" || arg == "--bare") {
+            bare = true;
+        } else if (arg == "-r" || arg == "--relative") {
+            relative = true;
+        } else if (arg == "-p" || arg == "--progress") {
+            showProgress = true;
+        } else if (arg == "-v" || arg == "--verbose") {
+            verbose = true;
+        } else if (arg == "-h" || arg == "--help") {
+            showHelp = true;
+        } else if (arg[0] == '-') {
+            // Unknown option
+            if (verbose) {
+                std::cerr << "Unknown option: " << arg << std::endl;
+            }
+        } else {
+            // Non-option argument - could be directory or filemask
+            fs::path potentialPath(arg);
+            if (fs::exists(potentialPath) && fs::is_directory(potentialPath)) {
+                targetPath = potentialPath;
             } else {
                 fileMask = arg;
             }
-        } catch (const std::exception& e) {
-            std::cerr << "Invalid argument: " << arg << " (" << e.what() << ")" << std::endl;
-            return 1;
         }
+        ++argIndex;
     }
 
-    // Get the current working directory
-    fs::path currentPath = fs::current_path();
+    // If help is requested, show it and exit
+    if (showHelp) {
+        std::cout << "Usage: largest [options] [directory] [filemask]\n"
+                  << "\nOptions:\n"
+                  << "  -n, --number NUM      Number of largest files to list (default: 50, -1 for all)\n"
+                  << "  -d, --depth NUM       Depth of subdirectories to consider (default: -1, infinite)\n"
+                  << "  -b, --bare            Display only file paths without file sizes\n"
+                  << "  -r, --relative        Display relative paths\n"
+                  << "  -p, --progress        Show progress (file count, current depth, max depth)\n"
+                  << "  -v, --verbose         Verbose mode (show inaccessible files/directories)\n"
+                  << "  -h, --help            Display this help text\n"
+                  << "  directory             Directory to scan (default: current directory)\n"
+                  << "  filemask              File mask to filter files (e.g., *.txt, default: *)\n"
+                  << "\nExamples:\n"
+                  << "  largest -n 10 -d 2 *.log\n"
+                  << "  largest C:\\Windows -n 20 *.dll\n"
+                  << "  largest -b -r -p\n";
+        return 0;
+    }
+
+    // Validate target path
+    if (!fs::exists(targetPath)) {
+        std::cerr << "Error: Directory does not exist: " << targetPath.string() << std::endl;
+        return 1;
+    }
+    
+    if (!fs::is_directory(targetPath)) {
+        std::cerr << "Error: Specified path is not a directory: " << targetPath.string() << std::endl;
+        return 1;
+    }
 
     // List the largest files
-    listLargestFiles(currentPath, fileMask, depth, numFiles, bare, relative, showProgress);
+    listLargestFiles(targetPath, fileMask, depth, numFiles, bare, relative, showProgress, verbose);
 
     return 0;
 }
