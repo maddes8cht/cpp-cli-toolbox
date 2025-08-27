@@ -4,7 +4,7 @@
 		{
 			"type": "cppbuild",
 			"label": "C/C++: g++.exe debug build active file",
-			"command": "G:\\msys64\\ucrt64\\bin\\g++.exe",
+			"command": "C:\\msys64\\ucrt64\\bin\\g++.exe",
 			"args": [
 				"-fdiagnostics-color=always",
 				"-g",
@@ -15,7 +15,7 @@
 				"${fileDirname}\\${fileBasenameNoExtension}_debug.exe"
 			],
 			"options": {
-				"cwd": "G:\\msys64\\ucrt64\\bin"
+				"cwd": "C:\\msys64\\ucrt64\\bin"
 			},
 			"problemMatcher": [
 				"$gcc"
@@ -26,7 +26,7 @@
 		{
 			"type": "cppbuild",
 			"label": "C/C++: g++.exe release build active file",
-			"command": "G:\\msys64\\ucrt64\\bin\\g++.exe",
+			"command": "C:\\msys64\\ucrt64\\bin\\g++.exe",
 			"args": [
 				"-fdiagnostics-color=always",
 				"-g",
@@ -37,7 +37,7 @@
 				"${fileDirname}\\${fileBasenameNoExtension}.exe"
 			],
 			"options": {
-				"cwd": "G:\\msys64\\ucrt64\\bin"
+				"cwd": "C:\\msys64\\ucrt64\\bin"
 			},
 			"problemMatcher": [
 				"$gcc"
