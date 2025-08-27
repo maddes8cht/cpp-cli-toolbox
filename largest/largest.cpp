@@ -105,59 +105,87 @@ void listLargestFiles(const fs::path& path, const std::string& fileMask = "*",
 
     try {
         auto lastUpdate = std::chrono::steady_clock::now();
-        for (auto it = fs::recursive_directory_iterator(path, fs::directory_options::skip_permission_denied);
-             it != fs::recursive_directory_iterator(); ++it) {
-            if (depth != -1 && it.depth() > depth) {
-                it.disable_recursion_pending(); // Skip deeper subdirectories
+        
+        // Use a manual approach to handle errors gracefully
+        std::vector<fs::path> directoriesToProcess;
+        directoriesToProcess.push_back(path);
+        
+        while (!directoriesToProcess.empty()) {
+            fs::path currentDir = directoriesToProcess.back();
+            directoriesToProcess.pop_back();
+            
+            // Calculate current depth
+            int currentDepth = 0;
+            if (currentDir != path) {
+                auto relPath = fs::relative(currentDir, path);
+                currentDepth = static_cast<int>(std::distance(relPath.begin(), relPath.end()));
+            }
+            
+            if (depth != -1 && currentDepth > depth) {
                 continue;
             }
             
+            maxDepth = std::max(maxDepth, currentDepth);
+            
             try {
-                if (fs::is_regular_file(*it) && matchesFileMask(it->path().filename().string(), fileMask)) {
-                    fileCount++;
-                    maxDepth = std::max(maxDepth, it.depth());
-                    uintmax_t size = fs::file_size(*it);
-                    
-                    if (numFiles == -1) {
-                        heap.push({*it, size});
-                    } else if (heap.size() < static_cast<size_t>(numFiles)) {
-                        heap.push({*it, size});
-                    } else if (size > heap.top().size) {
-                        heap.pop();
-                        heap.push({*it, size});
-                    }
-
-                    if (showProgress) {
-                        auto now = std::chrono::steady_clock::now();
-                        if (std::chrono::duration_cast<std::chrono::milliseconds>(now - lastUpdate).count() >= 100) {
-                            std::ostringstream oss;
-                            oss << "\rFiles: " << fileCount
-                                << " | Depth: " << std::setw(2) << std::setfill(' ') << it.depth()
-                                << " | Max Depth: " << std::setw(2) << std::setfill(' ') << maxDepth;
+                // Try to iterate through the directory
+                for (const auto& entry : fs::directory_iterator(currentDir, fs::directory_options::skip_permission_denied)) {
+                    try {
+                        if (fs::is_directory(entry)) {
+                            // Add subdirectory to processing queue
+                            directoriesToProcess.push_back(entry.path());
+                        } else if (fs::is_regular_file(entry) && matchesFileMask(entry.path().filename().string(), fileMask)) {
+                            fileCount++;
+                            uintmax_t size = fs::file_size(entry);
                             
-                            if (inaccessibleCount > 0) {
-                                oss << " | Inaccessible: " << inaccessibleCount;
+                            if (numFiles == -1) {
+                                heap.push({entry, size});
+                            } else if (heap.size() < static_cast<size_t>(numFiles)) {
+                                heap.push({entry, size});
+                            } else if (size > heap.top().size) {
+                                heap.pop();
+                                heap.push({entry, size});
                             }
-                            
-                            // Ensure we clear the entire line
-                            std::string status = oss.str();
-                            std::cout << status << std::string(80 - std::min(80, static_cast<int>(status.length())), ' ') 
-                                     << "\r" << std::flush;
-                            lastUpdate = now;
+
+                            if (showProgress) {
+                                auto now = std::chrono::steady_clock::now();
+                                if (std::chrono::duration_cast<std::chrono::milliseconds>(now - lastUpdate).count() >= 100) {
+                                    std::ostringstream oss;
+                                    oss << "\rFiles: " << fileCount
+                                        << " | Depth: " << std::setw(2) << std::setfill(' ') << currentDepth
+                                        << " | Max Depth: " << std::setw(2) << std::setfill(' ') << maxDepth;
+                                    
+                                    if (inaccessibleCount > 0) {
+                                        oss << " | Inaccessible: " << inaccessibleCount;
+                                    }
+                                    
+                                    // Ensure we clear the entire line
+                                    std::string status = oss.str();
+                                    std::cout << status << std::string(80 - std::min(80, static_cast<int>(status.length())), ' ') 
+                                             << "\r" << std::flush;
+                                    lastUpdate = now;
+                                }
+                            }
+                        }
+                    } catch (const fs::filesystem_error& e) {
+                        inaccessibleCount++;
+                        if (verbose) {
+                            std::cerr << "Inaccessible file/directory skipped: " << entry.path().string() << std::endl;
                         }
                     }
                 }
             } catch (const fs::filesystem_error& e) {
                 inaccessibleCount++;
                 if (verbose) {
-                    std::cerr << "Inaccessible file skipped: " << it->path().string() << std::endl;
+                    std::cerr << "Inaccessible directory skipped: " << currentDir.string() << std::endl;
                 }
+                
                 if (showProgress && inaccessibleCount == 1) {
                     // Force update to show inaccessible counter
                     auto now = std::chrono::steady_clock::now();
                     std::ostringstream oss;
                     oss << "\rFiles: " << fileCount
-                        << " | Depth: " << std::setw(2) << std::setfill(' ') << it.depth()
+                        << " | Depth: " << std::setw(2) << std::setfill(' ') << currentDepth
                         << " | Max Depth: " << std::setw(2) << std::setfill(' ') << maxDepth
                         << " | Inaccessible: " << inaccessibleCount;
                     
@@ -169,7 +197,7 @@ void listLargestFiles(const fs::path& path, const std::string& fileMask = "*",
         }
     } catch (const fs::filesystem_error& e) {
         if (verbose) {
-            std::cerr << "Error accessing directory: " << e.what() << std::endl;
+            std::cerr << "Error accessing root directory: " << e.what() << std::endl;
         }
     }
 
