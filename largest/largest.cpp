@@ -32,6 +32,8 @@
 #include <sstream>
 #include <vector>
 #include <chrono>
+#include <locale>
+#include <string>
 
 namespace fs = std::filesystem;
 
@@ -43,6 +45,27 @@ struct FileEntry {
     uintmax_t size;
     bool operator<(const FileEntry& other) const { return size < other.size; } // Max-heap
 };
+
+/**
+ * @brief Format number with thousands separators.
+ */
+std::string formatNumber(size_t number) {
+    std::string numStr = std::to_string(number);
+    if (numStr.length() <= 3) {
+        return numStr;
+    }
+    
+    std::string result;
+    int count = 0;
+    for (int i = static_cast<int>(numStr.length()) - 1; i >= 0; --i) {
+        if (count > 0 && count % 3 == 0) {
+            result = '.' + result; // German style thousands separator
+        }
+        result = numStr[i] + result;
+        count++;
+    }
+    return result;
+}
 
 /**
  * @brief Check if filename matches the filemask using wildcard patterns.
@@ -89,6 +112,13 @@ std::string formatFileSize(uintmax_t size) {
 }
 
 /**
+ * @brief Clear the current line properly.
+ */
+void clearLine() {
+    std::cout << "\r" << std::string(120, ' ') << "\r" << std::flush;
+}
+
+/**
  * @brief List the largest files in the specified directory and its subdirectories.
  */
 void listLargestFiles(const fs::path& path, const std::string& fileMask = "*",
@@ -117,8 +147,12 @@ void listLargestFiles(const fs::path& path, const std::string& fileMask = "*",
             // Calculate current depth
             int currentDepth = 0;
             if (currentDir != path) {
-                auto relPath = fs::relative(currentDir, path);
-                currentDepth = static_cast<int>(std::distance(relPath.begin(), relPath.end()));
+                try {
+                    auto relPath = fs::relative(currentDir, path);
+                    currentDepth = static_cast<int>(std::distance(relPath.begin(), relPath.end()));
+                } catch (...) {
+                    currentDepth = 0; // Fallback
+                }
             }
             
             if (depth != -1 && currentDepth > depth) {
@@ -150,8 +184,9 @@ void listLargestFiles(const fs::path& path, const std::string& fileMask = "*",
                             if (showProgress) {
                                 auto now = std::chrono::steady_clock::now();
                                 if (std::chrono::duration_cast<std::chrono::milliseconds>(now - lastUpdate).count() >= 100) {
+                                    clearLine();
                                     std::ostringstream oss;
-                                    oss << "\rFiles: " << fileCount
+                                    oss << "Files: " << formatNumber(fileCount)
                                         << " | Depth: " << std::setw(2) << std::setfill(' ') << currentDepth
                                         << " | Max Depth: " << std::setw(2) << std::setfill(' ') << maxDepth;
                                     
@@ -159,10 +194,7 @@ void listLargestFiles(const fs::path& path, const std::string& fileMask = "*",
                                         oss << " | Inaccessible: " << inaccessibleCount;
                                     }
                                     
-                                    // Ensure we clear the entire line
-                                    std::string status = oss.str();
-                                    std::cout << status << std::string(80 - std::min(80, static_cast<int>(status.length())), ' ') 
-                                             << "\r" << std::flush;
+                                    std::cout << "\r" << oss.str() << std::flush;
                                     lastUpdate = now;
                                 }
                             }
@@ -170,6 +202,7 @@ void listLargestFiles(const fs::path& path, const std::string& fileMask = "*",
                     } catch (const fs::filesystem_error& e) {
                         inaccessibleCount++;
                         if (verbose) {
+                            clearLine();
                             std::cerr << "Inaccessible file/directory skipped: " << entry.path().string() << std::endl;
                         }
                     }
@@ -177,21 +210,20 @@ void listLargestFiles(const fs::path& path, const std::string& fileMask = "*",
             } catch (const fs::filesystem_error& e) {
                 inaccessibleCount++;
                 if (verbose) {
+                    clearLine();
                     std::cerr << "Inaccessible directory skipped: " << currentDir.string() << std::endl;
                 }
                 
-                if (showProgress && inaccessibleCount == 1) {
-                    // Force update to show inaccessible counter
+                if (showProgress) {
                     auto now = std::chrono::steady_clock::now();
+                    clearLine();
                     std::ostringstream oss;
-                    oss << "\rFiles: " << fileCount
+                    oss << "Files: " << formatNumber(fileCount)
                         << " | Depth: " << std::setw(2) << std::setfill(' ') << currentDepth
                         << " | Max Depth: " << std::setw(2) << std::setfill(' ') << maxDepth
                         << " | Inaccessible: " << inaccessibleCount;
                     
-                    std::string status = oss.str();
-                    std::cout << status << std::string(80 - std::min(80, static_cast<int>(status.length())), ' ') 
-                             << "\r" << std::flush;
+                    std::cout << "\r" << oss.str() << std::flush;
                 }
             }
         }
@@ -203,7 +235,8 @@ void listLargestFiles(const fs::path& path, const std::string& fileMask = "*",
 
     if (showProgress) {
         // Clear the progress line
-        std::cout << "\r" << std::string(80, ' ') << "\r\033[?25h"; // Clear line, show cursor
+        clearLine();
+        std::cout << "\033[?25h"; // Show cursor
     }
 
     // Convert heap to vector for sorted output (largest first - already sorted due to max-heap)
