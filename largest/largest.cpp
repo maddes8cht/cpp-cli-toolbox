@@ -6,6 +6,20 @@
  * It provides options for customizing the file size analysis, including the number
  * of files to list, the depth of subdirectories to consider, file mask filtering,
  * progress feedback, and output format.
+ *
+ * @note Usage:
+ *     largest [options] [directory] [filemask]
+ *
+ * @note Options:
+ *   -n, --number NUM      Number of largest files to list (default: 50, -1 for all)
+ *   -d, --depth NUM       Depth of subdirectories to consider (default: -1, infinite)
+ *   -b, --bare            Display only file paths without file sizes
+ *   -r, --relative        Display relative paths
+ *   -p, --progress        Show progress (file count, current depth, max depth)
+ *   -v, --verbose         Verbose mode (show inaccessible files/directories)
+ *   -h, --help            Display this help text
+ *   directory             Directory to scan (default: current directory)
+ *   filemask              File mask to filter files (e.g., *.txt, default: *)
  */
 
 #include <Windows.h>
@@ -289,58 +303,81 @@ int main(int argc, char* argv[]) {
     bool relative = false;
     bool showProgress = false;
     bool verbose = false;
+    bool showHelp = false;
     fs::path targetPath = fs::current_path();
+    int argIndex = 1;
 
     // Parse command line arguments
-    for (int i = 1; i < argc; ++i) {
-        std::string arg = argv[i];
-        try {
-            if (arg == "-n") {
-                if (++i < argc) numFiles = std::stoi(argv[i]);
-                if (numFiles < -1) numFiles = 50; // Reset to default
-            } else if (arg == "-d") {
-                if (++i < argc) depth = std::stoi(argv[i]);
-                if (depth < -1) depth = -1; // Reset to default
-            } else if (arg == "-b") {
-                bare = true;
-            } else if (arg == "-r") {
-                relative = true;
-            } else if (arg == "-p") {
-                showProgress = true;
-            } else if (arg == "-v" || arg == "--verbose") {
-                verbose = true;
-            } else if (arg == "-h") {
-                std::cout << "Usage: largest [-n num] [-d num] [-b] [-r] [-p] [-v] [directory] [filemask]\n"
-                          << "Options:\n"
-                          << "  -n num    : Number of largest files to list (default: 50, -1 for all)\n"
-                          << "  -d num    : Depth of subdirectories to consider (default: -1, infinite)\n"
-                          << "  -b        : Display only file paths without file sizes\n"
-                          << "  -r        : Display relative paths\n"
-                          << "  -p        : Show progress (file count, current depth, max depth)\n"
-                          << "  -v        : Verbose mode (show inaccessible files/directories)\n"
-                          << "  directory : Directory to scan (default: current directory)\n"
-                          << "  filemask  : File mask to filter files (e.g., *.txt, default: *)\n"
-                          << "  -h        : Display this help text\n"
-                          << "\nExamples:\n"
-                          << "  largest -n 10 -d 2 *.log\n"
-                          << "  largest C:\\Windows -n 20 *.dll\n"
-                          << "  largest -b -r -p\n";
-                return 0;
-            } else {
-                // Check if this is a directory or filemask
-                fs::path potentialPath(arg);
-                if (fs::exists(potentialPath) && fs::is_directory(potentialPath)) {
-                    targetPath = potentialPath;
-                } else {
-                    fileMask = arg;
+    while (argIndex < argc) {
+        std::string arg = argv[argIndex];
+        
+        if (arg == "-n" || arg == "--number") {
+            if (++argIndex < argc) {
+                try {
+                    numFiles = std::stoi(argv[argIndex]);
+                    if (numFiles < -1) numFiles = 50; // Reset to default
+                } catch (const std::exception& e) {
+                    if (verbose) {
+                        std::cerr << "Invalid number argument: " << argv[argIndex] << std::endl;
+                    }
                 }
             }
-        } catch (const std::exception& e) {
-            if (verbose) {
-                std::cerr << "Invalid argument: " << arg << " (" << e.what() << ")" << std::endl;
+        } else if (arg == "-d" || arg == "--depth") {
+            if (++argIndex < argc) {
+                try {
+                    depth = std::stoi(argv[argIndex]);
+                    if (depth < -1) depth = -1; // Reset to default
+                } catch (const std::exception& e) {
+                    if (verbose) {
+                        std::cerr << "Invalid depth argument: " << argv[argIndex] << std::endl;
+                    }
+                }
             }
-            // Continue processing other arguments
+        } else if (arg == "-b" || arg == "--bare") {
+            bare = true;
+        } else if (arg == "-r" || arg == "--relative") {
+            relative = true;
+        } else if (arg == "-p" || arg == "--progress") {
+            showProgress = true;
+        } else if (arg == "-v" || arg == "--verbose") {
+            verbose = true;
+        } else if (arg == "-h" || arg == "--help") {
+            showHelp = true;
+        } else if (arg[0] == '-') {
+            // Unknown option
+            if (verbose) {
+                std::cerr << "Unknown option: " << arg << std::endl;
+            }
+        } else {
+            // Non-option argument - could be directory or filemask
+            fs::path potentialPath(arg);
+            if (fs::exists(potentialPath) && fs::is_directory(potentialPath)) {
+                targetPath = potentialPath;
+            } else {
+                fileMask = arg;
+            }
         }
+        ++argIndex;
+    }
+
+    // If help is requested, show it and exit
+    if (showHelp) {
+        std::cout << "Usage: largest [options] [directory] [filemask]\n"
+                  << "\nOptions:\n"
+                  << "  -n, --number NUM      Number of largest files to list (default: 50, -1 for all)\n"
+                  << "  -d, --depth NUM       Depth of subdirectories to consider (default: -1, infinite)\n"
+                  << "  -b, --bare            Display only file paths without file sizes\n"
+                  << "  -r, --relative        Display relative paths\n"
+                  << "  -p, --progress        Show progress (file count, current depth, max depth)\n"
+                  << "  -v, --verbose         Verbose mode (show inaccessible files/directories)\n"
+                  << "  -h, --help            Display this help text\n"
+                  << "  directory             Directory to scan (default: current directory)\n"
+                  << "  filemask              File mask to filter files (e.g., *.txt, default: *)\n"
+                  << "\nExamples:\n"
+                  << "  largest -n 10 -d 2 *.log\n"
+                  << "  largest C:\\Windows -n 20 *.dll\n"
+                  << "  largest -b -r -p\n";
+        return 0;
     }
 
     // Validate target path
