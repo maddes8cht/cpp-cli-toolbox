@@ -6,34 +6,18 @@
  * It provides options for customizing the file size analysis, including the number
  * of files to list, the depth of subdirectories to consider, file mask filtering,
  * progress feedback, and output format.
- *
- * @note Usage:
- *     largest [-n num] [-d num] [-b] [-r] [-p] [-v] [directory] [filemask]
- *
- * @note Options:
- *   -n num    : Number of largest files to list (default: 50, -1 for all)
- *   -d num    : Depth of subdirectories to consider (default: -1, infinite)
- *   -b        : Display only file paths without file sizes
- *   -r        : Display relative paths
- *   -p        : Show progress (file count, current depth, max depth)
- *   -v        : Verbose mode (show inaccessible files/directories)
- *   directory : Directory to scan (default: current directory)
- *   filemask  : File mask to filter files (e.g., *.txt, default: *)
- *   -h        : Display this help text
  */
 
 #include <Windows.h>
 #include <algorithm>
 #include <filesystem>
-#include <iomanip> // for std::setw, std::setfill
+#include <iomanip>
 #include <iostream>
 #include <queue>
 #include <regex>
 #include <sstream>
 #include <vector>
 #include <chrono>
-#include <locale>
-#include <string>
 
 namespace fs = std::filesystem;
 
@@ -45,6 +29,34 @@ struct FileEntry {
     uintmax_t size;
     bool operator<(const FileEntry& other) const { return size < other.size; } // Max-heap
 };
+
+/**
+ * @brief Initialize console for UTF-8 output on Windows
+ */
+void initConsoleUTF8() {
+    // Set console code page to UTF-8
+    SetConsoleOutputCP(CP_UTF8);
+    SetConsoleCP(CP_UTF8);
+    
+    // Enable virtual terminal processing for better ANSI support
+    HANDLE hOut = GetStdHandle(STD_OUTPUT_HANDLE);
+    if (hOut != INVALID_HANDLE_VALUE) {
+        DWORD dwMode = 0;
+        if (GetConsoleMode(hOut, &dwMode)) {
+            dwMode |= ENABLE_VIRTUAL_TERMINAL_PROCESSING;
+            SetConsoleMode(hOut, dwMode);
+        }
+    }
+    
+    HANDLE hIn = GetStdHandle(STD_INPUT_HANDLE);
+    if (hIn != INVALID_HANDLE_VALUE) {
+        DWORD dwMode = 0;
+        if (GetConsoleMode(hIn, &dwMode)) {
+            dwMode |= ENABLE_VIRTUAL_TERMINAL_INPUT;
+            SetConsoleMode(hIn, dwMode);
+        }
+    }
+}
 
 /**
  * @brief Format number with thousands separators.
@@ -59,7 +71,7 @@ std::string formatNumber(size_t number) {
     int count = 0;
     for (int i = static_cast<int>(numStr.length()) - 1; i >= 0; --i) {
         if (count > 0 && count % 3 == 0) {
-            result = '.' + result; // German style thousands separator
+            result = '.' + result; // thousands separator
         }
         result = numStr[i] + result;
         count++;
@@ -130,7 +142,7 @@ void listLargestFiles(const fs::path& path, const std::string& fileMask = "*",
     int maxDepth = 0;
 
     if (showProgress) {
-        std::cout << "\033[?25l"; // Hide cursor (may not work on all terminals)
+        std::cout << "\033[?25l"; // Hide cursor
     }
 
     try {
@@ -267,6 +279,9 @@ void listLargestFiles(const fs::path& path, const std::string& fileMask = "*",
 }
 
 int main(int argc, char* argv[]) {
+    // Initialize console for UTF-8 output
+    initConsoleUTF8();
+    
     int numFiles = 50;
     int depth = -1; // Infinite depth by default
     std::string fileMask = "*";
