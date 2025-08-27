@@ -15,14 +15,9 @@
  *   -l, --length=NUM      Set progress bar length (default: 50, min: 5, max: 300)
  * Examples:
  *   on 12:30 dir /b              (executes at 12:30 with countdown)
- *   on -d 00:00:20 dir /b        (executes after 20 seconds with countdown)
- *   on -o p -d 15 dir            (executes after 15 seconds with 50-char progress bar)
- *   on -o b -l 15 -d 1:20 dir    (executes after 1:20 with 15-char progress bar + countdown)
- *   on -o n -d 15 dir            (executes after 15 seconds with no output)
- *   on -o p -l 100 -d 10         (shows 100-char progress bar for 10 seconds, no command)
- *   on -d 90                     (waits 1:30 with countdown)
- *   on -d 120:00                 (waits 2:00:00 with countdown)
- *   on -d 26:00:00               (waits 26:00:00 with countdown)
+ *   on -d 20 dir                 (executes after 20 seconds with countdown)
+ *   on -o p 21:30                (shows progress bar until 21:30, no command)
+ *   on -o n 12:30 dir /b         (executes at 12:30 with no output)
  */
 
 #include <iostream>
@@ -93,16 +88,23 @@ int main(int argc, char *argv[]) {
     // If help is requested, show it and exit
     if (showHelp) {
         std::cout << "Usage: " << argv[0] << " [options] Time [Command [CommandArgs...]]" << std::endl;
-        std::cout << "Time format: hh, hh:mm, or hh:mm:ss (for clock time)" << std::endl;
-        std::cout << "For delay mode: hh:mm:ss, mm:ss, or ss. The leading unit can exceed standard limits and will be normalized (e.g., 90 becomes 1:30; 120:00 becomes 2:00:00; 26:00:00 becomes 26:00:00). Subsequent units must be 0-59." << std::endl;
+        std::cout << "\nTime format: hh, hh:mm, or hh:mm:ss (for clock time)" << std::endl;
+        std::cout << "For delay mode: hh:mm:ss, mm:ss, or ss." << std::endl;
+        std::cout << "  The leading unit can exceed standard limits and will be normalized" << std::endl;
+        std::cout << "  (e.g., 90 becomes 1:30; 120:00 becomes 2:00:00; 26:00:00 becomes 26:00:00). Subsequent units must be 0-59." << std::endl;
         std::cout << "Default output: countdown timer, updating in the same line." << std::endl;
         std::cout << "If no Command is provided, the program only displays the countdown or progress bar." << std::endl;
-        std::cout << "Options:" << std::endl;
+        std::cout << "\nOptions:" << std::endl;
         std::cout << "  -h, --help            Show this help message" << std::endl;
         std::cout << "  -d, --delay           Interpret Time as duration instead of clock time" << std::endl;
         std::cout << "  -c, --no-clear        Disable in-place countdown (print new line each update)" << std::endl;
         std::cout << "  -o, --output=MODE     Set output mode: time, progress, both, none (or t, p, b, n)" << std::endl;
         std::cout << "  -l, --length=NUM      Set progress bar length (default: 50, min: 5, max: 300)" << std::endl;
+        std::cout << "\nExamples:" << std::endl;
+        std::cout << "  on 12:30 dir /b              (executes at 12:30 with countdown)" << std::endl;
+        std::cout << "  on -d 20 dir                 (executes after 20 seconds with countdown)" << std::endl;
+        std::cout << "  on -o p 21:30                (shows progress bar until 21:30, no command)" << std::endl;
+        std::cout << "  on -o n 12:30 dir /b         (executes at 12:30 with no output)" << std::endl;
         return 0;
     }
 
