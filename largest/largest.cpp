@@ -128,8 +128,8 @@ std::string formatFileSize(uintmax_t size) {
         const char* suffixes[] = {" BY", " KB", " MB", " GB", " TB", " PB", " EB", " ZB", " YB"};
         int suffixIndex = 0;
         double scaledSize = static_cast<double>(size);
-        while (scaledSize >= 1000.0 && suffixIndex < sizeof(suffixes) / sizeof(suffixes[0]) - 1) {
-            scaledSize /= 1000.0;
+        while (scaledSize >= 1024.0 && suffixIndex < sizeof(suffixes) / sizeof(suffixes[0]) - 1) {
+            scaledSize /= 1024.0;
             suffixIndex++;
         }
         oss << std::setw(3) << std::right << static_cast<uintmax_t>(scaledSize) << suffixes[suffixIndex];
