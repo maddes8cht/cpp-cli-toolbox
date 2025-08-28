@@ -41,7 +41,7 @@ namespace fs = std::filesystem;
 struct FileEntry {
     fs::directory_entry entry;
     uintmax_t size;
-    bool operator<(const FileEntry& other) const { return size < other.size; } // Max-heap
+    bool operator<(const FileEntry& other) const { return size > other.size; } // Min-heap!
 };
 
 /**
@@ -265,13 +265,14 @@ void listLargestFiles(const fs::path& path, const std::string& fileMask = "*",
         std::cout << "\033[?25h"; // Show cursor
     }
 
-    // Convert heap to vector for sorted output (largest first - already sorted due to max-heap)
+    // Convert heap to vector for sorted output (largest first)
     std::vector<FileEntry> files;
     while (!heap.empty()) {
         files.push_back(heap.top());
         heap.pop();
     }
-    // No need to reverse since we're using a max-heap
+    std::reverse(files.begin(), files.end());
+    //  need to reverse since we're using a min-heap
 
     // Display the largest files
     int count = 0;
